@@ -273,6 +273,26 @@ class SunnyWebBoxUDP(SunnyWebBoxBase):
         return response['result']
 
 
+class SWBConfigurationEditor(weewx.drivers.AbstractConfEditor):
+    @property
+    def default_stanza(self):
+        return """
+[Interceptor]
+    # This section is for the SMA Sunny WebBox driver.
+
+    # Hostname or IP address of the webbox
+    #host = 0.0.00
+
+    # The driver to use:
+    driver = user.swb
+"""
+
+    def prompt_for_settings(self):
+        print "Specify the hostname or address of the webbox"
+        host = self._prompt('host', '0.0.0.0')
+        return {'host': host}
+
+
 if __name__ == '__main__':
 
     def print_response(response, padding=''):
