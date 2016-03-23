@@ -233,7 +233,7 @@ class SunnyWebBoxHTTP(SunnyWebBoxBase):
                                (response['error'], request, response))
         if response['id'] != request['id']:
             raise SWBException('unexpected response id: %s != %s' %
-                               (response['id'] != request['id']))
+                               (response['id'], request['id']))
         return response['result']
 
 
@@ -263,7 +263,7 @@ class SunnyWebBoxUDP(SunnyWebBoxBase):
                                (response['error'], request, response))
         if response['id'] != request['id']:
             raise SWBException('unexpected response id: %s != %s' %
-                               (response['id'] != request['id']))
+                               (response['id'], request['id']))
         return response['result']
 
 
