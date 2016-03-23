@@ -42,14 +42,14 @@ schema = [('dateTime',   'INTEGER NOT NULL UNIQUE PRIMARY KEY'),
           ('usUnits',    'INTEGER NOT NULL'),
           ('interval',   'INTEGER NOT NULL'),
           ('grid_power',  'REAL'),   # Watt - instantaneious
-          ('grid_energy', 'REAL')]   # kWh - cumulative
+          ('grid_energy', 'REAL')]   # kWh - delta since last
 
 
 class SWBDriver(weewx.drivers.AbstractDevice):
 
     DEFAULT_OBS_MAP = {
         'GriPwr': 'grid_power',
-        'GriEgyTot': 'grid_energy'}
+        'GriEgyTot_delta': 'grid_energy'}
 
     def __init__(self, **stn_dict):
         loginf('driver version is %s' % DRIVER_VERSION)
@@ -72,6 +72,7 @@ class SWBDriver(weewx.drivers.AbstractDevice):
             self.swb = SunnyWebBoxHTTP(host, password=password)
         else:
             self.swb = SunnyWebBoxUDP(host, password=password)
+        self.last_grid_energy_total = None
 
     def closePort(self):
         self.swb = None
@@ -85,9 +86,9 @@ class SWBDriver(weewx.drivers.AbstractDevice):
             ntries += 1
             try:
                 packet = self.get_data()
-                print "data", packet
+                logdbg('data: %s' % packet)
                 packet = self.sensors_to_fields(packet)
-                print "mapped", packet
+                logdbg('mapped to fields: %s' % packet)
                 ntries = 0
                 yield packet
                 time.sleep(self.polling_interval)
@@ -102,6 +103,9 @@ class SWBDriver(weewx.drivers.AbstractDevice):
             raise weewx.RetriesExceeded(msg)
 
     def sensors_to_fields(self, pkt):
+        if self.last_grid_energy_total is not None:
+            pkt['GriEgyTot_delta'] = pkt['GriEgyTot'] - self.last_grid_energy_total
+        self.last_grid_energy_total = pkt['GriEgyTot']
         packet = {'dateTime': int(time.time()+0.5), 'usUnits':weewx.US}
         for x in self.obs_map:
             if x in pkt:
@@ -228,7 +232,8 @@ class SunnyWebBoxHTTP(SunnyWebBoxBase):
             raise SWBException('error : %s\nrequest: %s\nresponse: %s)' %
                                (response['error'], request, response))
         if response['id'] != request['id']:
-            raise SWBException('RPC answer has wrong id!')
+            raise SWBException('unexpected response id: %s != %s' %
+                               (response['id'] != request['id']))
         return response['result']
 
 
@@ -257,7 +262,8 @@ class SunnyWebBoxUDP(SunnyWebBoxBase):
             raise SWBException('error : %s\nrequest: %s\nresponse: %s)' %
                                (response['error'], request, response))
         if response['id'] != request['id']:
-            raise SWBException('RPC answer has wrong id!')
+            raise SWBException('unexpected response id: %s != %s' %
+                               (response['id'] != request['id']))
         return response['result']
 
 
