@@ -5,6 +5,7 @@ Driver to collect data from the SMA "Sunny Webbox".
 """
 
 # FIXME: automatically detect the webbox using zeroconf
+# FIXME: ensure that Counter never goes negative?
 
 from __future__ import with_statement
 import json
@@ -14,6 +15,7 @@ import time
 
 import weewx.drivers
 import weewx.units
+import weewx.accum
 
 DRIVER_NAME = 'SunnyWebBox'
 DRIVER_VERSION = '0.1'
@@ -47,6 +49,7 @@ schema = [('dateTime',   'INTEGER NOT NULL UNIQUE PRIMARY KEY'),
 
 weewx.units.obs_group_dict['grid_power'] = 'group_power' # watt
 weewx.units.obs_group_dict['grid_energy'] = 'group_energy' # watt-hour
+weewx.accum.extract_dict['grid_energy'] = weewx.accum.Accum.sum_extract
 
 class SWBDriver(weewx.drivers.AbstractDevice):
 
