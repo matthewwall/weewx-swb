@@ -13,6 +13,7 @@ import threading
 import time
 
 import weewx.drivers
+import weewx.units
 
 DRIVER_NAME = 'SunnyWebBox'
 DRIVER_VERSION = '0.1'
@@ -44,12 +45,10 @@ schema = [('dateTime',   'INTEGER NOT NULL UNIQUE PRIMARY KEY'),
           ('grid_power',  'REAL'),   # Watt - instantaneious
           ('grid_energy', 'REAL')]   # kWh - delta since last
 
+weewx.units.obs_group_dict['grid_power'] = 'group_power' # watt
+weewx.units.obs_group_dict['grid_energy'] = 'group_energy' # watt-hour
 
 class SWBDriver(weewx.drivers.AbstractDevice):
-
-    DEFAULT_OBS_MAP = {
-        'GriPwr': 'grid_power',
-        'GriEgyTot_delta': 'grid_energy'}
 
     def __init__(self, **stn_dict):
         loginf('driver version is %s' % DRIVER_VERSION)
@@ -60,7 +59,6 @@ class SWBDriver(weewx.drivers.AbstractDevice):
             msg = "unspecified parameter %s" % e
             logerr(msg)
             raise Exception(msg)
-        self.obs_map = stn_dict.get('map', self.DEFAULT_OBS_MAP)
         self.max_tries = int(stn_dict.get('max_tries', 5))
         self.retry_wait = int(stn_dict.get('retry_wait', 30))
         self.polling_interval = int(stn_dict.get('polling_interval', 30))
@@ -104,12 +102,17 @@ class SWBDriver(weewx.drivers.AbstractDevice):
 
     def sensors_to_fields(self, pkt):
         if self.last_grid_energy_total is not None:
-            pkt['GriEgyTot_delta'] = pkt['GriEgyTot'] - self.last_grid_energy_total
+            if self.last_grid_energy_total <= pkt['GriEgyTot']:
+                pkt['GriEgyTot_delta'] = pkt['GriEgyTot'] - self.last_grid_energy_total
+            else:
+                logerr("bogus grid energy: %s < %s" %
+                       (pkt['GriEgyTot'], self.last_grid_energy_total))
         self.last_grid_energy_total = pkt['GriEgyTot']
         packet = {'dateTime': int(time.time()+0.5), 'usUnits':weewx.US}
-        for x in self.obs_map:
-            if x in pkt:
-                packet[self.obs_map[x]] = pkt[x]
+        if 'GriPwr' in pkt:
+            packet['grid_power'] = pkt['GriPwr']
+        if 'GriEgyTot_delta' in pkt:
+            packet['grid_energy'] = pkt['GriEgyTot_delta'] * 1000.0
         return packet
 
     def get_data(self):
