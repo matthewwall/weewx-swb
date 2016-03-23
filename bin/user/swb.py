@@ -14,7 +14,7 @@ import time
 
 import weewx.drivers
 
-DRIVER_NAME = 'SunnyWebbox'
+DRIVER_NAME = 'SunnyWebBox'
 DRIVER_VERSION = '0.1'
 
 
@@ -38,23 +38,79 @@ def logerr(msg):
     logmsg(syslog.LOG_ERR, msg)
 
 
+schema = [('dateTime',   'INTEGER NOT NULL UNIQUE PRIMARY KEY'),
+          ('usUnits',    'INTEGER NOT NULL'),
+          ('interval',   'INTEGER NOT NULL'),
+          ('grid_power',  'REAL'),   # Watt
+          ('grid_energy', 'REAL')]   # kWh
+
+
 class SWBDriver(weewx.drivers.AbstractDevice):
 
     def __init__(self, **stn_dict):
         loginf('driver version is %s' % DRIVER_VERSION)
+        host = None
         try:
-            self._addr = stn_dict['address']
+            host = stn_dict['host']
         except KeyError, e:
-            logerr("unspecified parameter '%s'" % e)
-            raise
+            msg = "unspecified parameter %s" % e
+            logerr(msg)
+            raise Exception(msg)
+        self.max_tries = int(stn_dict.get('max_tries', 5))
+        self.retry_wait = int(stn_dict.get('retry_wait', 30))
+        self.polling_interval = int(stn_dict.get('polling_interval', 30))
+        if self.polling_interval < 30:
+            raise Exception('polling_interval must be 30 seconds or greater')
+        password = stn_dict.get('password', None)
+        proto = stn_dict.get('protocol', 'udp')
+        if proto == 'http':
+            self.swb = SunnyWebBoxHTTP(host, password=password)
+        else:
+            self.swb = SunnyWebBoxUDP(host, password=password)
+
+    def closePort(self):
+        self.swb = None
 
     def hardware_name(self):
         return "Sunny Webbox"
 
     def genLoopPackets(self):
-        while True:
-            packet = {'dateTime': int(time.time()+0.5), 'usUnits':weewx.US}
-            yield packet
+        ntries = 0
+        while ntries < self.max_tries:
+            ntries += 1
+            try:
+                packet = {'dateTime': int(time.time()+0.5), 'usUnits':weewx.US}
+                response = self.swb.getPlantOverview()
+                logdbg("plant overview: %s" % response)
+                for x in response:
+                    if x['meta'] in ['GriPwr', 'GriEgyTot']:
+                        packet[str(x['meta'])] = float(x['value'])
+                devices = self.swb.getDevices()
+                logdbg('devices: %s' % devices)
+                for d in devices:
+                    dev_key = d['key']
+                    sn = d['name'][4:]
+                    channels = self.swb.getProcessDataChannels(dev_key)
+                    logdbg('channels %s: %s' % (dev_key, channels))
+                    data = self.swb.getProcessData([{'key':dev_key,
+                                                     'channels':channels}])
+                    logdbg('data %s: %s' % (dev_key, data))
+                    for x in data[dev_key]:
+                        if x['meta'] in ['Ipv', 'Upv-Ist', 'Fac', 'Pac', 'h-On', 'h-Total', 'E-Total']:
+                            label = "%s_%s" % (x['meta'], sn)
+                            packet[str(label)] = float(x['value'])
+                ntries = 0
+                yield packet
+                time.sleep(self.polling_interval)
+            except SWBException, e:
+                logerr("Failed attempt %d of %d to get LOOP data: %s" %
+                       (ntries, self.max_tries, e))
+                logdbg("Waiting %d seconds before retry" % self.retry_wait)
+                time.sleep(self.retry_wait)
+        else:
+            msg = "Max retries (%d) exceeded for LOOP data" % self.max_tries
+            logerr(msg)
+            raise weewx.RetriesExceeded(msg)
 
 
 def str2buf(s):
@@ -62,30 +118,26 @@ def str2buf(s):
 def buf2str(b):
     return unicode(b, 'latin1')
 
-class NotImplemented(Exception):
-    def __init__(msg):
-        pass
-
-
-class Counter:
-    def __init__(self, start=0):
-        self.idx = start
-
-    def __call__(self):
-        idx = self.idx
-        self.idx += 1
-        return idx
-
+class SWBException(Exception):
+    pass
 
 class SunnyWebBoxBase(object):
+    class Counter:
+        def __init__(self, start=0):
+            self.idx = start
+        def __call__(self):
+            idx = self.idx
+            self.idx += 1
+            return idx
+
     def __init__(self, host, password=None):
         self.host = host
         self.password = hashlib.md5(password).hexdigest() if password else ''
         self.open_connection()
-        self.count = Counter(1)
+        self.count = SunnyWebBoxBase.Counter(1)
 
     def open_connection(self):
-        raise NotImplemented('open_connection')
+        raise NotImplementedError('open_connection')
 
     def new_request(self, name, use_pw=False, **params):
         r = {'version': '1.0', 'proc': name, 'format': 'JSON'}
@@ -97,7 +149,7 @@ class SunnyWebBoxBase(object):
         return r
 
     def _rpc(self, *args):
-        raise NotImplemented('_rpc')
+        raise NotImplementedError('_rpc')
 
     # implement each remote method
 
@@ -139,7 +191,7 @@ class SunnyWebBoxBase(object):
         return r
 
     def setParameter(self, *args):
-        raise NotImplemented('setParameters is not yet implemented')
+        raise NotImplementedError('setParameters is not yet implemented')
 
 
 class SunnyWebBoxHTTP(SunnyWebBoxBase):
@@ -149,18 +201,20 @@ class SunnyWebBoxHTTP(SunnyWebBoxBase):
 
     def _rpc(self, request):
         """send rpc request as JSON object via http and read the result"""
-        print "rpc request for %s" % request
         js = json.dumps(request)
         self.conn.request('POST', '/rpc', "RPC=%s" % js)
         tmp = buf2str(self.conn.getresponse().read())
         response = json.loads(tmp)
+        if 'error' in response:
+            raise SWBException('error : %s\nrequest: %s\nresponse: %s)' %
+                               (response['error'], request, response))
         if response['id'] != request['id']:
-            raise Exception('RPC answer has wrong id!')
+            raise SWBException('RPC answer has wrong id!')
         return response['result']
 
 
-class SunnyWebBoxUDPStream(SunnyWebBoxBase):
-    """Communication with a 'Sunny WebBox' via UDP Stream."""
+class SunnyWebBoxUDP(SunnyWebBoxBase):
+    """Communication with a 'Sunny WebBox' via UDP."""
     
     def open_connection(self):
         from socket import socket, AF_INET, SOCK_DGRAM
@@ -171,7 +225,7 @@ class SunnyWebBoxUDPStream(SunnyWebBoxBase):
         self.rsock.settimeout(100.0)
 
     def _rpc(self, request):
-        """send rpc request as JSON via UDP Stream and read the result"""
+        """send rpc request as JSON via UDP and read the result"""
         js = ''.join(i+'\0' for i in json.dumps(request, separators=(',',':')))
         self.ssock.sendto(str2buf(js), (self.host, self.udpPort))
         while True:
@@ -181,10 +235,10 @@ class SunnyWebBoxUDPStream(SunnyWebBoxBase):
         tmp = buf2str(data).replace('\0', '')
         response = json.loads(tmp)
         if 'error' in response:
-            raise Exception('error : %s\nrequest: %s\nresponse: %s)' %
-                            (response['error'], request, response))
+            raise SWBException('error : %s\nrequest: %s\nresponse: %s)' %
+                               (response['error'], request, response))
         if response['id'] != request['id']:
-            raise Exception('RPC answer has wrong id!')
+            raise SWBException('RPC answer has wrong id!')
         return response['result']
 
 
@@ -207,7 +261,7 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--password', action='store', help='password')
     args = parser.parse_args()
     if args.udp:
-        swb = SunnyWebBoxUDPStream(args.host, password=args.password)
+        swb = SunnyWebBoxUDP(args.host, password=args.password)
     else:
         swb = SunnyWebBoxHTTP(args.host, password=args.password)
 

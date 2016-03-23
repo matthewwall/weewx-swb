@@ -30,6 +30,6 @@ Joerg Raedler
 
   https://bitbucket.org/jraedler/sunnywebbox
 
-Andrew Tridgell for a simple python implementation and pvoutput uploader:
+Andrew Tridgell
 
   http://solar.tridgell.net/webbox/README.txt
