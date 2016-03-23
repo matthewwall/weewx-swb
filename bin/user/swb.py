@@ -41,11 +41,15 @@ def logerr(msg):
 schema = [('dateTime',   'INTEGER NOT NULL UNIQUE PRIMARY KEY'),
           ('usUnits',    'INTEGER NOT NULL'),
           ('interval',   'INTEGER NOT NULL'),
-          ('grid_power',  'REAL'),   # Watt
-          ('grid_energy', 'REAL')]   # kWh
+          ('grid_power',  'REAL'),   # Watt - instantaneious
+          ('grid_energy', 'REAL')]   # kWh - cumulative
 
 
 class SWBDriver(weewx.drivers.AbstractDevice):
+
+    DEFAULT_OBS_MAP = {
+        'GriPwr': 'grid_power',
+        'GriEgyTot': 'grid_energy'}
 
     def __init__(self, **stn_dict):
         loginf('driver version is %s' % DRIVER_VERSION)
@@ -56,6 +60,7 @@ class SWBDriver(weewx.drivers.AbstractDevice):
             msg = "unspecified parameter %s" % e
             logerr(msg)
             raise Exception(msg)
+        self.obs_map = stn_dict.get('map', self.DEFAULT_OBS_MAP)
         self.max_tries = int(stn_dict.get('max_tries', 5))
         self.retry_wait = int(stn_dict.get('retry_wait', 30))
         self.polling_interval = int(stn_dict.get('polling_interval', 30))
@@ -79,26 +84,10 @@ class SWBDriver(weewx.drivers.AbstractDevice):
         while ntries < self.max_tries:
             ntries += 1
             try:
-                packet = {'dateTime': int(time.time()+0.5), 'usUnits':weewx.US}
-                response = self.swb.getPlantOverview()
-                logdbg("plant overview: %s" % response)
-                for x in response:
-                    if x['meta'] in ['GriPwr', 'GriEgyTot']:
-                        packet[str(x['meta'])] = float(x['value'])
-                devices = self.swb.getDevices()
-                logdbg('devices: %s' % devices)
-                for d in devices:
-                    dev_key = d['key']
-                    sn = d['name'][4:]
-                    channels = self.swb.getProcessDataChannels(dev_key)
-                    logdbg('channels %s: %s' % (dev_key, channels))
-                    data = self.swb.getProcessData([{'key':dev_key,
-                                                     'channels':channels}])
-                    logdbg('data %s: %s' % (dev_key, data))
-                    for x in data[dev_key]:
-                        if x['meta'] in ['Ipv', 'Upv-Ist', 'Fac', 'Pac', 'h-On', 'h-Total', 'E-Total']:
-                            label = "%s_%s" % (x['meta'], sn)
-                            packet[str(label)] = float(x['value'])
+                packet = self.get_data()
+                print "data", packet
+                packet = self.sensors_to_fields(packet)
+                print "mapped", packet
                 ntries = 0
                 yield packet
                 time.sleep(self.polling_interval)
@@ -111,6 +100,36 @@ class SWBDriver(weewx.drivers.AbstractDevice):
             msg = "Max retries (%d) exceeded for LOOP data" % self.max_tries
             logerr(msg)
             raise weewx.RetriesExceeded(msg)
+
+    def sensors_to_fields(self, pkt):
+        packet = {'dateTime': int(time.time()+0.5), 'usUnits':weewx.US}
+        for x in self.obs_map:
+            if x in pkt:
+                packet[self.obs_map[x]] = pkt[x]
+        return packet
+
+    def get_data(self):
+        packet = dict()
+        response = self.swb.getPlantOverview()
+        logdbg("plant overview: %s" % response)
+        for x in response:
+            if x['meta'] in ['GriPwr', 'GriEgyTot']:
+                packet[str(x['meta'])] = float(x['value'])
+        devices = self.swb.getDevices()
+        logdbg('devices: %s' % devices)
+        for d in devices:
+            dev_key = d['key']
+            sn = d['name'][4:]
+            channels = self.swb.getProcessDataChannels(dev_key)
+            logdbg('channels %s: %s' % (dev_key, channels))
+            data = self.swb.getProcessData([{'key':dev_key,
+                                             'channels':channels}])
+            logdbg('data %s: %s' % (dev_key, data))
+            for x in data[dev_key]:
+                if x['meta'] in ['Ipv', 'Upv-Ist', 'Fac', 'Pac', 'h-On', 'h-Total', 'E-Total']:
+                    label = "%s_%s" % (x['meta'], sn)
+                    packet[str(label)] = float(x['value'])
+        return packet
 
 
 def str2buf(s):
