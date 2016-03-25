@@ -94,7 +94,7 @@ class SWBDriver(weewx.drivers.AbstractDevice):
                 ntries = 0
                 yield packet
                 time.sleep(self.polling_interval)
-            except (socket.error, SWBException), e:
+            except (SWBException, socket.error, httplib.HTTPException), e:
                 logerr("Failed attempt %d of %d to get LOOP data: %s" %
                        (ntries, self.max_tries, e))
                 logdbg("Waiting %d seconds before retry" % self.retry_wait)
@@ -227,7 +227,7 @@ class SunnyWebBoxBase(object):
 class SunnyWebBoxHTTP(SunnyWebBoxBase):
     def open_connection(self):
         from httplib import HTTPConnection
-        self.conn  = HTTPConnection(self.host)
+        self.conn = HTTPConnection(self.host)
 
     def _rpc(self, request):
         """send rpc request as JSON object via http and read the result"""
