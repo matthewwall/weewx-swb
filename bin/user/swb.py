@@ -9,6 +9,7 @@ Driver to collect data from the SMA "Sunny Webbox".
 
 from __future__ import with_statement
 import json
+import socket
 import syslog
 import threading
 import time
@@ -93,7 +94,7 @@ class SWBDriver(weewx.drivers.AbstractDevice):
                 ntries = 0
                 yield packet
                 time.sleep(self.polling_interval)
-            except SWBException, e:
+            except (socket.error, SWBException), e:
                 logerr("Failed attempt %d of %d to get LOOP data: %s" %
                        (ntries, self.max_tries, e))
                 logdbg("Waiting %d seconds before retry" % self.retry_wait)
