@@ -1,23 +1,25 @@
 weewx-swb
 
-This is a driver for weewx that collects data from the SMA Sunny Webbox.
+This is a driver for weewx that collects data from the SMA Sunny WebBox.
 The webbox is a network interface to inverters on a photovoltaic system.
 
 Installation
 
-0) install weewx
+0) install weewx (see the weewx user guide)
 
-(see the weewx user guide)
+1) download the driver
 
-1) install the swb driver
+wget -O weewx-swb.zip https://github.com/matthewwall/weewx-swb/archive/master.zip
 
-wee_extension --install weewx-sma
+2) install the driver
 
-2) configure the driver
+wee_extension --install weewx-swb.zip
+
+3) configure the driver
 
 wee_config --reconfigure
 
-3) start weewx
+4) start weewx
 
 sudo /etc/init.d/weewx start
 
