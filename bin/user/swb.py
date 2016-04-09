@@ -18,7 +18,7 @@ import weewx.units
 import weewx.accum
 
 DRIVER_NAME = 'SunnyWebBox'
-DRIVER_VERSION = '0.1'
+DRIVER_VERSION = '0.2'
 
 
 def loader(config_dict, _):
@@ -51,6 +51,27 @@ weewx.units.obs_group_dict['grid_power'] = 'group_power' # watt
 weewx.units.obs_group_dict['grid_energy'] = 'group_energy' # watt-hour
 weewx.accum.extract_dict['grid_energy'] = weewx.accum.Accum.sum_extract
 
+
+class SWBConfigurationEditor(weewx.drivers.AbstractConfEditor):
+    @property
+    def default_stanza(self):
+        return """
+[Interceptor]
+    # This section is for the SMA Sunny WebBox driver.
+
+    # Hostname or IP address of the webbox
+    host = 0.0.0.0
+
+    # The driver to use:
+    driver = user.swb
+"""
+
+    def prompt_for_settings(self):
+        print "Specify the hostname or address of the webbox"
+        host = self._prompt('host', '0.0.0.0')
+        return {'host': host}
+
+
 class SWBDriver(weewx.drivers.AbstractDevice):
 
     def __init__(self, **stn_dict):
@@ -59,9 +80,7 @@ class SWBDriver(weewx.drivers.AbstractDevice):
         try:
             host = stn_dict['host']
         except KeyError, e:
-            msg = "unspecified parameter %s" % e
-            logerr(msg)
-            raise Exception(msg)
+            raise Exception("unspecified parameter %s" % e)
         self.max_tries = int(stn_dict.get('max_tries', 5))
         self.retry_wait = int(stn_dict.get('retry_wait', 30))
         self.polling_interval = int(stn_dict.get('polling_interval', 30))
@@ -271,26 +290,6 @@ class SunnyWebBoxUDP(SunnyWebBoxBase):
             raise SWBException('unexpected response id: %s != %s' %
                                (response['id'], request['id']))
         return response['result']
-
-
-class SWBConfigurationEditor(weewx.drivers.AbstractConfEditor):
-    @property
-    def default_stanza(self):
-        return """
-[Interceptor]
-    # This section is for the SMA Sunny WebBox driver.
-
-    # Hostname or IP address of the webbox
-    #host = 0.0.00
-
-    # The driver to use:
-    driver = user.swb
-"""
-
-    def prompt_for_settings(self):
-        print "Specify the hostname or address of the webbox"
-        host = self._prompt('host', '0.0.0.0')
-        return {'host': host}
 
 
 if __name__ == '__main__':
