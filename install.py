@@ -9,7 +9,7 @@ def loader():
 class SWBInstaller(ExtensionInstaller):
     def __init__(self):
         super(SWBInstaller, self).__init__(
-            version="0.2",
+            version="0.3",
             name='swb',
             description='Capture weather data from SMA Sunny Webbox',
             author="Matthew Wall",

@@ -18,7 +18,7 @@ import weewx.units
 import weewx.accum
 
 DRIVER_NAME = 'SunnyWebBox'
-DRIVER_VERSION = '0.2'
+DRIVER_VERSION = '0.3'
 
 
 def loader(config_dict, _):
@@ -56,7 +56,7 @@ class SWBConfigurationEditor(weewx.drivers.AbstractConfEditor):
     @property
     def default_stanza(self):
         return """
-[Interceptor]
+[SunnyWebBox]
     # This section is for the SMA Sunny WebBox driver.
 
     # Hostname or IP address of the webbox
@@ -81,6 +81,7 @@ class SWBDriver(weewx.drivers.AbstractDevice):
             host = stn_dict['host']
         except KeyError, e:
             raise Exception("unspecified parameter %s" % e)
+        self.model = stn_dict.get("model", "Sunny WebBox")
         self.max_tries = int(stn_dict.get('max_tries', 5))
         self.retry_wait = int(stn_dict.get('retry_wait', 30))
         self.polling_interval = int(stn_dict.get('polling_interval', 30))
@@ -98,7 +99,7 @@ class SWBDriver(weewx.drivers.AbstractDevice):
         self.swb = None
 
     def hardware_name(self):
-        return "Sunny Webbox"
+        return self.model
 
     def genLoopPackets(self):
         ntries = 0
@@ -143,7 +144,7 @@ class SWBDriver(weewx.drivers.AbstractDevice):
         logdbg("plant overview: %s" % response)
         for x in response:
             if x['meta'] in ['GriPwr', 'GriEgyTot']:
-                packet[str(x['meta'])] = float(x['value'])
+                packet[str(x['meta'])] = str2float(x['value'])
         devices = self.swb.getDevices()
         logdbg('devices: %s' % devices)
         for d in devices:
@@ -157,9 +158,14 @@ class SWBDriver(weewx.drivers.AbstractDevice):
             for x in data[dev_key]:
                 if x['meta'] in ['Ipv', 'Upv-Ist', 'Fac', 'Pac', 'h-On', 'h-Total', 'E-Total']:
                     label = "%s_%s" % (x['meta'], sn)
-                    packet[str(label)] = float(x['value'])
+                    packet[str(label)] = str2float(x['value'])
         return packet
 
+def str2float(s):
+    try:
+        return float(s)
+    except ValueError:
+        return None
 
 def str2buf(s):
     return bytes(s)
