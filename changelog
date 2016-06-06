@@ -1,5 +1,6 @@
 0.3 20may2016
 * deal with missing values
+* handle socket.error via IOError
 
 0.2 08apr2016
 * minor refactoring

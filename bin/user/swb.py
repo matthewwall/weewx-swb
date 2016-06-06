@@ -113,7 +113,7 @@ class SWBDriver(weewx.drivers.AbstractDevice):
                 ntries = 0
                 yield packet
                 time.sleep(self.polling_interval)
-            except SWBException, e:
+            except (IOError, SWBException), e:
                 logerr("Failed attempt %d of %d to get LOOP data: %s" %
                        (ntries, self.max_tries, e))
                 logdbg("Waiting %d seconds before retry" % self.retry_wait)
