@@ -18,7 +18,7 @@ import weewx.units
 import weewx.accum
 
 DRIVER_NAME = 'SunnyWebBox'
-DRIVER_VERSION = '0.3'
+DRIVER_VERSION = '0.4'
 
 
 def loader(config_dict, _):

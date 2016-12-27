@@ -1,3 +1,6 @@
+0.4 27dec2016
+* handle deltas generically
+
 0.3 20may2016
 * deal with missing values
 * handle socket.error via IOError
