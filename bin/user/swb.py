@@ -130,7 +130,7 @@ class SWBDriver(weewx.drivers.AbstractDevice):
                 if k.startswith(label):
                     delta = self.calculate_delta(k, pkt)
                     if delta is not None:
-                        deltas['%s_delta' % label] = delta
+                        deltas['%s_delta' % k] = delta
                     self.last_total[k] = pkt[k]
         logdbg("deltas: %s" % deltas)
         packet = {'dateTime': int(time.time()+0.5), 'usUnits':weewx.US}
