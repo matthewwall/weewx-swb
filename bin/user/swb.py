@@ -93,7 +93,7 @@ class SWBDriver(weewx.drivers.AbstractDevice):
             self.swb = SunnyWebBoxHTTP(host, password=password)
         else:
             self.swb = SunnyWebBoxUDP(host, password=password)
-        self.last_grid_energy_total = None
+        self.last_total = dict()
 
     def closePort(self):
         self.swb = None
@@ -124,19 +124,31 @@ class SWBDriver(weewx.drivers.AbstractDevice):
             raise weewx.RetriesExceeded(msg)
 
     def sensors_to_fields(self, pkt):
-        if self.last_grid_energy_total is not None:
-            if self.last_grid_energy_total <= pkt['GriEgyTot']:
-                pkt['GriEgyTot_delta'] = pkt['GriEgyTot'] - self.last_grid_energy_total
-            else:
-                logerr("bogus grid energy: %s < %s" %
-                       (pkt['GriEgyTot'], self.last_grid_energy_total))
-        self.last_grid_energy_total = pkt['GriEgyTot']
+        deltas = dict()
+        for label in ['GriEgyTot', 'h-On', 'h-Total', 'E-Total']:
+            for k in pkt:
+                if k.startswith(label):
+                    delta = self.calculate_delta(k, pkt)
+                    if delta is not None:
+                        deltas['%s_delta' % label] = delta
+                    self.last_total[k] = pkt[k]
+        logdbg("deltas: %s" % deltas)
         packet = {'dateTime': int(time.time()+0.5), 'usUnits':weewx.US}
         if 'GriPwr' in pkt:
             packet['grid_power'] = pkt['GriPwr']
-        if 'GriEgyTot_delta' in pkt:
-            packet['grid_energy'] = pkt['GriEgyTot_delta'] * 1000.0
+        if 'GriEgyTot_delta' in deltas:
+            packet['grid_energy'] = deltas['GriEgyTot_delta'] * 1000.0
         return packet
+
+    def calculate_delta(self, label, pkt):
+        delta = None
+        last_total = self.last_total.get(label)
+        if last_total is not None:
+            if last_total <= pkt[label]:
+                delta = pkt[label] - last_total
+            else:
+                logerr("bogus %s: %s < %s" % (label, pkt[label], last_total))
+        return delta
 
     def get_data(self):
         packet = dict()
