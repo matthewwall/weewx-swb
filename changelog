@@ -1,3 +1,6 @@
+0.5 29mar2017
+* deal with changes in weewx 3.7 accumulators
+
 0.4 27dec2016
 * handle deltas generically
 
