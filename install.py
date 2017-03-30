@@ -14,5 +14,9 @@ class SWBInstaller(ExtensionInstaller):
             description='Capture weather data from SMA Sunny Webbox',
             author="Matthew Wall",
             author_email="mwall@users.sourceforge.net",
+            config={
+                'Accumulator': {
+                    'grid_energy': {
+                        'extractor': 'sum'}}},
             files=[('bin/user', ['bin/user/swb.py'])]
             )

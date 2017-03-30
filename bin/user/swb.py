@@ -50,11 +50,10 @@ schema = [('dateTime',   'INTEGER NOT NULL UNIQUE PRIMARY KEY'),
 weewx.units.obs_group_dict['grid_power'] = 'group_power' # watt
 weewx.units.obs_group_dict['grid_energy'] = 'group_energy' # watt-hour
 try:
-    # weewx v3.7.0+
-    weewx.accum.extract_dict['grid_energy'] = weewx.accum.Accum.extract_sum
-except AttributeError:
-    # weewx prior to 3.7.0
+    # weewx prior to 3.7.0.  for 3.7.0+ this goes in the weewx config file
     weewx.accum.extract_dict['grid_energy'] = weewx.accum.Accum.sum_extract
+except AttributeError:
+    pass
 
 
 class SWBConfigurationEditor(weewx.drivers.AbstractConfEditor):
