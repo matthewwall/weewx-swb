@@ -18,7 +18,7 @@ import weewx.units
 import weewx.accum
 
 DRIVER_NAME = 'SunnyWebBox'
-DRIVER_VERSION = '0.5'
+DRIVER_VERSION = '0.6'
 
 
 def loader(config_dict, _):
@@ -102,6 +102,7 @@ class SWBDriver(weewx.drivers.AbstractDevice):
     def closePort(self):
         self.swb = None
 
+    @property
     def hardware_name(self):
         return self.model
 

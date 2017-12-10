@@ -1,3 +1,6 @@
+0.6 10dec2017
+* hardware_name is a property
+
 0.5 29mar2017
 * deal with changes in weewx 3.7 accumulators
 
