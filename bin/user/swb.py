@@ -8,6 +8,7 @@ Driver to collect data from the SMA "Sunny Webbox".
 # FIXME: ensure that Counter never goes negative?
 
 from __future__ import with_statement
+import httplib
 import json
 import socket
 import syslog
@@ -19,7 +20,7 @@ import weewx.units
 import weewx.accum
 
 DRIVER_NAME = 'SunnyWebBox'
-DRIVER_VERSION = '0.1'
+DRIVER_VERSION = '0.6'
 
 
 def loader(config_dict, _):
@@ -50,7 +51,32 @@ schema = [('dateTime',   'INTEGER NOT NULL UNIQUE PRIMARY KEY'),
 
 weewx.units.obs_group_dict['grid_power'] = 'group_power' # watt
 weewx.units.obs_group_dict['grid_energy'] = 'group_energy' # watt-hour
-weewx.accum.extract_dict['grid_energy'] = weewx.accum.Accum.sum_extract
+try:
+    # weewx prior to 3.7.0.  for 3.7.0+ this goes in the weewx config file
+    weewx.accum.extract_dict['grid_energy'] = weewx.accum.Accum.sum_extract
+except AttributeError:
+    pass
+
+
+class SWBConfigurationEditor(weewx.drivers.AbstractConfEditor):
+    @property
+    def default_stanza(self):
+        return """
+[SunnyWebBox]
+    # This section is for the SMA Sunny WebBox driver.
+
+    # Hostname or IP address of the webbox
+    host = 0.0.0.0
+
+    # The driver to use:
+    driver = user.swb
+"""
+
+    def prompt_for_settings(self):
+        print "Specify the hostname or address of the webbox"
+        host = self._prompt('host', '0.0.0.0')
+        return {'host': host}
+
 
 class SWBDriver(weewx.drivers.AbstractDevice):
 
@@ -60,9 +86,8 @@ class SWBDriver(weewx.drivers.AbstractDevice):
         try:
             host = stn_dict['host']
         except KeyError, e:
-            msg = "unspecified parameter %s" % e
-            logerr(msg)
-            raise Exception(msg)
+            raise Exception("unspecified parameter %s" % e)
+        self.model = stn_dict.get("model", "Sunny WebBox")
         self.max_tries = int(stn_dict.get('max_tries', 5))
         self.retry_wait = int(stn_dict.get('retry_wait', 30))
         self.polling_interval = int(stn_dict.get('polling_interval', 30))
@@ -74,13 +99,14 @@ class SWBDriver(weewx.drivers.AbstractDevice):
             self.swb = SunnyWebBoxHTTP(host, password=password)
         else:
             self.swb = SunnyWebBoxUDP(host, password=password)
-        self.last_grid_energy_total = None
+        self.last_total = dict()
 
     def closePort(self):
         self.swb = None
 
+    @property
     def hardware_name(self):
-        return "Sunny Webbox"
+        return self.model
 
     def genLoopPackets(self):
         ntries = 0
@@ -105,19 +131,31 @@ class SWBDriver(weewx.drivers.AbstractDevice):
             raise weewx.RetriesExceeded(msg)
 
     def sensors_to_fields(self, pkt):
-        if self.last_grid_energy_total is not None:
-            if self.last_grid_energy_total <= pkt['GriEgyTot']:
-                pkt['GriEgyTot_delta'] = pkt['GriEgyTot'] - self.last_grid_energy_total
-            else:
-                logerr("bogus grid energy: %s < %s" %
-                       (pkt['GriEgyTot'], self.last_grid_energy_total))
-        self.last_grid_energy_total = pkt['GriEgyTot']
+        deltas = dict()
+        for label in ['GriEgyTot', 'h-On', 'h-Total', 'E-Total']:
+            for k in pkt:
+                if k.startswith(label):
+                    delta = self.calculate_delta(k, pkt)
+                    if delta is not None:
+                        deltas['%s_delta' % k] = delta
+                    self.last_total[k] = pkt[k]
+        logdbg("deltas: %s" % deltas)
         packet = {'dateTime': int(time.time()+0.5), 'usUnits':weewx.US}
         if 'GriPwr' in pkt:
             packet['grid_power'] = pkt['GriPwr']
-        if 'GriEgyTot_delta' in pkt:
-            packet['grid_energy'] = pkt['GriEgyTot_delta'] * 1000.0
+        if 'GriEgyTot_delta' in deltas:
+            packet['grid_energy'] = deltas['GriEgyTot_delta'] * 1000.0
         return packet
+
+    def calculate_delta(self, label, pkt):
+        delta = None
+        last_total = self.last_total.get(label)
+        if last_total is not None:
+            if last_total <= pkt[label]:
+                delta = pkt[label] - last_total
+            else:
+                logerr("bogus %s: %s < %s" % (label, pkt[label], last_total))
+        return delta
 
     def get_data(self):
         packet = dict()
@@ -125,7 +163,7 @@ class SWBDriver(weewx.drivers.AbstractDevice):
         logdbg("plant overview: %s" % response)
         for x in response:
             if x['meta'] in ['GriPwr', 'GriEgyTot']:
-                packet[str(x['meta'])] = float(x['value'])
+                packet[str(x['meta'])] = str2float(x['value'])
         devices = self.swb.getDevices()
         logdbg('devices: %s' % devices)
         for d in devices:
@@ -139,9 +177,14 @@ class SWBDriver(weewx.drivers.AbstractDevice):
             for x in data[dev_key]:
                 if x['meta'] in ['Ipv', 'Upv-Ist', 'Fac', 'Pac', 'h-On', 'h-Total', 'E-Total']:
                     label = "%s_%s" % (x['meta'], sn)
-                    packet[str(label)] = float(x['value'])
+                    packet[str(label)] = str2float(x['value'])
         return packet
 
+def str2float(s):
+    try:
+        return float(s)
+    except ValueError:
+        return None
 
 def str2buf(s):
     return bytes(s)
@@ -272,26 +315,6 @@ class SunnyWebBoxUDP(SunnyWebBoxBase):
             raise SWBException('unexpected response id: %s != %s' %
                                (response['id'], request['id']))
         return response['result']
-
-
-class SWBConfigurationEditor(weewx.drivers.AbstractConfEditor):
-    @property
-    def default_stanza(self):
-        return """
-[Interceptor]
-    # This section is for the SMA Sunny WebBox driver.
-
-    # Hostname or IP address of the webbox
-    #host = 0.0.00
-
-    # The driver to use:
-    driver = user.swb
-"""
-
-    def prompt_for_settings(self):
-        print "Specify the hostname or address of the webbox"
-        host = self._prompt('host', '0.0.0.0')
-        return {'host': host}
 
 
 if __name__ == '__main__':
